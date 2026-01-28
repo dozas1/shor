@@ -2,12 +2,14 @@
   "name": "SHOR - Sensor Humano de Operación Real",
   "short_name": "SHOR",
   "description": "Bitácora de operaciones diarias",
-  "start_url": "./SHOR.html",
+  "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#2D3748",
   "theme_color": "#2D3748",
   "orientation": "portrait",
   "scope": "./",
+  "categories": ["productivity", "business"],
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "icon-192.png",

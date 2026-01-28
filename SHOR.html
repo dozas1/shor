@@ -959,12 +959,21 @@
                 timestamp: new Date().toISOString()
             };
             
+            // Guardar en IndexedDB local
             await dbAdd('registros', registro);
             registros.push(registro);
             renderRegistros();
             
-            // Sincronizar a Firebase
-            syncToFirebase();
+            // Guardar INMEDIATAMENTE en Firebase (tiempo real)
+            if (firebaseDB && deviceId) {
+                try {
+                    const registroRef = firebaseDB.ref('registros/' + deviceId + '/' + registro.id);
+                    await registroRef.set(registro);
+                    console.log('[Firebase] Registro guardado en tiempo real:', registro.id);
+                } catch (error) {
+                    console.error('[Firebase] Error al guardar registro:', error);
+                }
+            }
             
             // Vibrate for feedback
             if (navigator.vibrate) {
@@ -993,6 +1002,12 @@
                 return;
             }
             
+            if (!firebaseDB || !deviceId) {
+                alert('Firebase no está configurado. Los datos solo están guardados localmente.');
+                closeExportModal();
+                return;
+            }
+            
             const allRegistros = await dbGetAll('registros');
             const allReportes = await dbGetAll('reportes');
             
@@ -1013,22 +1028,19 @@
                 return;
             }
             
-            // Determine file name
+            // Determine report ID
             const fechas = registrosParaExportar.map(r => r.fecha).sort();
             const fechaInicio = fechas[0];
             const fechaFin = fechas[fechas.length - 1];
             
-            const nombreArchivo = fechaInicio === fechaFin 
-                ? `SHOR_${persona.nombre}_${fechaFin}.json`
-                : `SHOR_${persona.nombre}_${fechaInicio}_a_${fechaFin}.json`;
+            const reportId = 'rep_' + Date.now();
             
             // Build export data
             const exportData = {
                 shor_export: {
                     version: '1.0.0',
-                    export_id: 'SHOR_' + new Date().toISOString().replace(/[:\-.]/g, ''),
+                    export_id: reportId,
                     export_date: new Date().toISOString(),
-                    archivo_nombre: nombreArchivo,
                     periodo: {
                         desde: fechaInicio,
                         hasta: fechaFin
@@ -1062,41 +1074,28 @@
                 }
             };
             
-            // Save report record
+            // Save report record locally
             const reporteRecord = {
-                id: 'rep_' + Date.now(),
+                id: reportId,
                 fecha: fechaFin,
                 opinion: opinion,
-                archivo: nombreArchivo,
                 timestamp: new Date().toISOString()
             };
             await dbAdd('reportes', reporteRecord);
             
-            // **NUEVO: Subir a Firebase**
-            if (firebaseDB && deviceId) {
-                try {
-                    const exportRef = firebaseDB.ref('exports/' + deviceId + '/' + reporteRecord.id);
-                    await exportRef.set(exportData);
-                    console.log('[Firebase] Reporte exportado a Firebase');
-                } catch (error) {
-                    console.error('[Firebase] Error al exportar:', error);
-                }
+            // Guardar SOLO en Firebase (sin descarga)
+            try {
+                const exportRef = firebaseDB.ref('exports/' + deviceId + '/' + reportId);
+                await exportRef.set(exportData);
+                console.log('[Firebase] Reporte guardado en Firebase:', reportId);
+                
+                closeExportModal();
+                alert('✓ Reporte guardado en Firebase\n\nID: ' + reportId + '\nRegistros: ' + registrosParaExportar.length);
+            } catch (error) {
+                console.error('[Firebase] Error al guardar reporte:', error);
+                closeExportModal();
+                alert('❌ Error al guardar en Firebase: ' + error.message);
             }
-            
-            // Generate JSON string
-            const jsonStr = JSON.stringify(exportData, null, 2);
-            
-            // Download JSON file
-            const blob = new Blob([jsonStr], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = nombreArchivo;
-            a.click();
-            URL.revokeObjectURL(url);
-            
-            closeExportModal();
-            alert('✓ Reporte exportado y subido a Firebase');
         }
         
         function shareToWhatsApp(mensaje) {
