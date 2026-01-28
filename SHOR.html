@@ -12,8 +12,9 @@
     <title>SHOR - Sensor Humano de Operación Real</title>
     
     <!-- PWA Manifest -->
-    <link rel="manifest" href="./manifest.json">
-    <link rel="apple-touch-icon" href="./icon-192.png">
+    <link rel="manifest" href="/shor/manifest.json">
+    <meta name="theme-color" content="#2D3748">
+    <link rel="apple-touch-icon" href="/shor/icon-192.png">
     
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -641,30 +642,30 @@
         }
         
         // ============================================
-        // App Logic
+        // App Initialization
         // ============================================
         
+        // Register Service Worker
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/shor/sw.js')
+                .then(reg => console.log('[SW] Registrado:', reg.scope))
+                .catch(err => console.error('[SW] Error:', err));
+        }
+        
         async function init() {
-            db = await initDB();
-            
-            // Inicializar Firebase
+            await initDB();
             initFirebase();
             
             // Check if persona exists
             const personas = await dbGetAll('personas');
             if (personas.length > 0) {
                 persona = personas[0];
+                registros = await dbGetAll('registros');
                 showApp();
-            } else {
-                document.getElementById('onboarding').style.display = 'flex';
             }
             
-            // PWA install prompt
-            window.addEventListener('beforeinstallprompt', (e) => {
-                e.preventDefault();
-                deferredPrompt = e;
-                document.getElementById('installBanner').classList.add('show');
-            });
+            // PWA install detection
+            detectPWAInstall();
         }
         
         async function iniciarApp() {
@@ -1112,6 +1113,10 @@
                 installBtn.classList.add('hidden');
             }
         });
+        
+        function detectPWAInstall() {
+            checkIfInstalled();
+        }
         
         // Verificar si ya está instalado (múltiples métodos para Android)
         function checkIfInstalled() {
