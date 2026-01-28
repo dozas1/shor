@@ -63,11 +63,11 @@
             font-size: 14px;
             font-weight: 600;
             cursor: pointer;
-            display: none;
+            display: block;
         }
         
-        .install-btn.show {
-            display: block;
+        .install-btn.hidden {
+            display: none;
         }
         
         .header-btn {
@@ -427,6 +427,14 @@
             <div class="registros-list">
                 <div class="registros-title">Registros de hoy</div>
                 <div id="registrosList"></div>
+            </div>
+            
+            <div class="card" style="margin-top: 20px;">
+                <div class="registros-title">📊 Resumen completo</div>
+                <button class="btn btn-outline" onclick="toggleResumenCompleto()" style="width: 100%; margin-top: 12px;">
+                    <span id="resumenToggleText">Ver todas las tareas</span>
+                </button>
+                <div id="resumenCompleto" style="display: none; margin-top: 16px;"></div>
             </div>
         </div>
     </div>
@@ -790,12 +798,13 @@
                     const transcript = event.results[i][0].transcript;
                     if (event.results[i].isFinal) {
                         finalTranscript += transcript + ' ';
+                        console.log('[Voice] Texto final acumulado:', finalTranscript);
                     } else {
                         interimTranscript += transcript;
                     }
                 }
                 
-                console.log('[Voice] Transcripción:', finalTranscript + interimTranscript);
+                console.log('[Voice] Transcribiendo...', finalTranscript + interimTranscript);
             };
             
             recognition.onerror = (event) => {
@@ -1031,12 +1040,6 @@
         window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();
             deferredPrompt = e;
-            
-            // Mostrar botón de instalación solo si está en navegador (no instalado)
-            const installBtn = document.getElementById('installBtn');
-            if (installBtn) {
-                installBtn.classList.add('show');
-            }
             console.log('[PWA] Install prompt disponible');
         });
         
@@ -1045,9 +1048,17 @@
             deferredPrompt = null;
             const installBtn = document.getElementById('installBtn');
             if (installBtn) {
-                installBtn.classList.remove('show');
+                installBtn.classList.add('hidden');
             }
         });
+        
+        // Verificar si ya está instalado
+        if (window.matchMedia('(display-mode: standalone)').matches) {
+            const installBtn = document.getElementById('installBtn');
+            if (installBtn) {
+                installBtn.classList.add('hidden');
+            }
+        }
         
         async function installApp() {
             if (deferredPrompt) {
@@ -1057,13 +1068,90 @@
                 if (outcome === 'accepted') {
                     const installBtn = document.getElementById('installBtn');
                     if (installBtn) {
-                        installBtn.classList.remove('show');
+                        installBtn.classList.add('hidden');
                     }
                 }
                 deferredPrompt = null;
             } else {
-                alert('La app ya está instalada o el navegador no soporta instalación');
+                alert('La app ya está instalada o el navegador no soporta instalación PWA');
             }
+        }
+        
+        // ============================================
+        // Resumen Completo
+        // ============================================
+        
+        let resumenVisible = false;
+        
+        async function toggleResumenCompleto() {
+            resumenVisible = !resumenVisible;
+            const container = document.getElementById('resumenCompleto');
+            const toggleText = document.getElementById('resumenToggleText');
+            
+            if (resumenVisible) {
+                container.style.display = 'block';
+                toggleText.textContent = 'Ocultar resumen';
+                await renderResumenCompleto();
+            } else {
+                container.style.display = 'none';
+                toggleText.textContent = 'Ver todas las tareas';
+            }
+        }
+        
+        async function renderResumenCompleto() {
+            const container = document.getElementById('resumenCompleto');
+            const allRegistros = await dbGetAll('registros');
+            const registrosPorFecha = {};
+            
+            // Agrupar por fecha
+            allRegistros.forEach(r => {
+                if (!registrosPorFecha[r.fecha]) {
+                    registrosPorFecha[r.fecha] = [];
+                }
+                registrosPorFecha[r.fecha].push(r);
+            });
+            
+            // Ordenar fechas descendente
+            const fechas = Object.keys(registrosPorFecha).sort().reverse();
+            
+            if (fechas.length === 0) {
+                container.innerHTML = '<p style="color: #718096; text-align: center; padding: 20px;">No hay registros aún</p>';
+                return;
+            }
+            
+            let html = '<div style="max-height: 400px; overflow-y: auto;">';
+            
+            fechas.forEach(fecha => {
+                const registrosDia = registrosPorFecha[fecha];
+                const fechaObj = new Date(fecha + 'T00:00:00');
+                const fechaStr = fechaObj.toLocaleDateString('es-MX', { weekday: 'short', month: 'short', day: 'numeric' });
+                
+                html += `
+                    <div style="margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #E2E8F0;">
+                        <div style="font-weight: 600; color: #2D3748; margin-bottom: 8px;">${fechaStr}</div>
+                `;
+                
+                registrosDia.forEach(r => {
+                    const icon = r.tipo === 'voz' ? '🎤' : r.tipo === 'texto' ? '✏️' : '⏭️';
+                    const time = new Date(r.timestamp).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+                    html += `
+                        <div style="display: flex; gap: 12px; margin-bottom: 8px; padding: 8px; background: #F7FAFC; border-radius: 8px;">
+                            <div style="font-size: 20px;">${icon}</div>
+                            <div style="flex: 1;">
+                                <div style="color: #2D3748; font-size: 14px;">${r.contenido || r.tipo}</div>
+                                <div style="color: #718096; font-size: 12px; margin-top: 4px;">${time}</div>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                html += '</div>';
+            });
+            
+            html += '</div>';
+            html += `<div style="margin-top: 12px; padding: 12px; background: #EDF2F7; border-radius: 8px; text-align: center; color: #4A5568; font-size: 14px;">Total: ${allRegistros.length} registros</div>`;
+            
+            container.innerHTML = html;
         }
         
         // ============================================
