@@ -54,6 +54,22 @@
             gap: 12px;
         }
         
+        .install-btn {
+            background: #48BB78;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            display: none;
+        }
+        
+        .install-btn.show {
+            display: block;
+        }
+        
         .header-btn {
             background: none;
             border: none;
@@ -383,6 +399,7 @@
         <header class="header">
             <h1 id="headerTitle">Hola, Usuario</h1>
             <div class="header-actions">
+                <button class="install-btn" id="installBtn" onclick="installApp()">📱 Instalar App</button>
                 <button class="header-btn" onclick="showExportModal()" title="Exportar">📤</button>
             </div>
         </header>
@@ -394,8 +411,8 @@
             </div>
             
             <div class="main-actions">
-                <button class="btn btn-primary" id="recordBtn" onclick="toggleRecording()">
-                    🎤 Grabar audio
+                <button class="btn btn-primary" id="recordBtn" onclick="toggleVoiceTranscription()">
+                    🎤 Dictar nota por voz
                 </button>
                 
                 <button class="btn btn-secondary" onclick="showTextModal()">
@@ -457,6 +474,9 @@
         let persona = null;
         let registros = [];
         let mediaRecorder = null;
+        let recognition = null;
+        let isTranscribing = false;
+        let deferredPrompt = null;
         let firebaseDB = null;
         let deviceId = null;
         
@@ -557,9 +577,6 @@
                 console.error('[Firebase] Error en syncFromFirebase:', error);
             }
         }
-        let audioChunks = [];
-        let isRecording = false;
-        let deferredPrompt = null;
         
         // ============================================
         // IndexedDB Setup
@@ -718,7 +735,7 @@
             }
             
             container.innerHTML = registros.map(r => {
-                const icon = r.tipo === 'audio' ? '🎤' : r.tipo === 'texto' ? '✏️' : '⏭️';
+                const icon = r.tipo === 'voz' ? '🎤' : r.tipo === 'texto' ? '✏️' : '⏭️';
                 const time = new Date(r.timestamp).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
                 return `
                     <div class="registro-item">
@@ -733,59 +750,89 @@
         }
         
         // ============================================
-        // Recording
+        // Voice Transcription (Speech to Text)
         // ============================================
         
-        async function toggleRecording() {
-            if (isRecording) {
-                stopRecording();
+        function toggleVoiceTranscription() {
+            if (isTranscribing) {
+                stopVoiceTranscription();
             } else {
-                startRecording();
+                startVoiceTranscription();
             }
         }
         
-        async function startRecording() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                mediaRecorder = new MediaRecorder(stream);
-                audioChunks = [];
-                
-                mediaRecorder.ondataavailable = (e) => {
-                    audioChunks.push(e.data);
-                };
-                
-                mediaRecorder.onstop = async () => {
-                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                    const reader = new FileReader();
-                    reader.onloadend = async () => {
-                        await guardarRegistro('audio', 'Audio grabado', reader.result);
-                    };
-                    reader.readAsDataURL(audioBlob);
-                    stream.getTracks().forEach(track => track.stop());
-                };
-                
-                mediaRecorder.start();
-                isRecording = true;
-                
+        function startVoiceTranscription() {
+            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                alert('Tu navegador no soporta reconocimiento de voz. Usa Chrome o Edge.');
+                return;
+            }
+            
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.lang = 'es-MX';
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            
+            let finalTranscript = '';
+            
+            recognition.onstart = () => {
+                isTranscribing = true;
                 const btn = document.getElementById('recordBtn');
-                btn.innerHTML = '⏹️ Detener grabación';
+                btn.innerHTML = '⏹️ Detener dictado';
                 btn.classList.add('btn-recording');
+                console.log('[Voice] Transcripción iniciada');
+            };
+            
+            recognition.onresult = (event) => {
+                let interimTranscript = '';
                 
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalTranscript += transcript + ' ';
+                    } else {
+                        interimTranscript += transcript;
+                    }
+                }
+                
+                console.log('[Voice] Transcripción:', finalTranscript + interimTranscript);
+            };
+            
+            recognition.onerror = (event) => {
+                console.error('[Voice] Error:', event.error);
+                if (event.error === 'no-speech') {
+                    alert('No se detectó voz. Intenta de nuevo.');
+                } else if (event.error === 'not-allowed') {
+                    alert('Permisos de micrófono denegados.');
+                }
+                stopVoiceTranscription();
+            };
+            
+            recognition.onend = async () => {
+                if (finalTranscript.trim()) {
+                    await guardarRegistro('voz', finalTranscript.trim());
+                    console.log('[Voice] Nota guardada:', finalTranscript);
+                }
+                stopVoiceTranscription();
+            };
+            
+            try {
+                recognition.start();
             } catch (err) {
-                alert('No se pudo acceder al micrófono. Asegúrate de dar permisos.');
-                console.error(err);
+                console.error('[Voice] Error al iniciar:', err);
+                alert('Error al iniciar reconocimiento de voz');
             }
         }
         
-        function stopRecording() {
-            if (mediaRecorder && isRecording) {
-                mediaRecorder.stop();
-                isRecording = false;
-                
-                const btn = document.getElementById('recordBtn');
-                btn.innerHTML = '🎤 Grabar audio';
-                btn.classList.remove('btn-recording');
+        function stopVoiceTranscription() {
+            if (recognition) {
+                recognition.stop();
+                recognition = null;
             }
+            isTranscribing = false;
+            const btn = document.getElementById('recordBtn');
+            btn.innerHTML = '🎤 Dictar nota por voz';
+            btn.classList.remove('btn-recording');
         }
         
         // ============================================
@@ -945,28 +992,31 @@
             };
             await dbAdd('reportes', reporteRecord);
             
+            // **NUEVO: Subir a Firebase**
+            if (firebaseDB && deviceId) {
+                try {
+                    const exportRef = firebaseDB.ref('exports/' + deviceId + '/' + reporteRecord.id);
+                    await exportRef.set(exportData);
+                    console.log('[Firebase] Reporte exportado a Firebase');
+                } catch (error) {
+                    console.error('[Firebase] Error al exportar:', error);
+                }
+            }
+            
             // Generate JSON string
             const jsonStr = JSON.stringify(exportData, null, 2);
             
-            // Share via WhatsApp or download
-            const mensaje = `📋 SHOR Reporte: ${nombreArchivo}\n\n${jsonStr}`;
-            
-            if (navigator.share) {
-                try {
-                    await navigator.share({
-                        title: `SHOR - ${persona.nombre}`,
-                        text: mensaje
-                    });
-                } catch (err) {
-                    // Fallback to WhatsApp
-                    shareToWhatsApp(mensaje);
-                }
-            } else {
-                shareToWhatsApp(mensaje);
-            }
+            // Download JSON file
+            const blob = new Blob([jsonStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = nombreArchivo;
+            a.click();
+            URL.revokeObjectURL(url);
             
             closeExportModal();
-            alert('Reporte exportado ✓');
+            alert('✓ Reporte exportado y subido a Firebase');
         }
         
         function shareToWhatsApp(mensaje) {
@@ -978,14 +1028,41 @@
         // PWA Install
         // ============================================
         
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            
+            // Mostrar botón de instalación solo si está en navegador (no instalado)
+            const installBtn = document.getElementById('installBtn');
+            if (installBtn) {
+                installBtn.classList.add('show');
+            }
+            console.log('[PWA] Install prompt disponible');
+        });
+        
+        window.addEventListener('appinstalled', () => {
+            console.log('[PWA] App instalada');
+            deferredPrompt = null;
+            const installBtn = document.getElementById('installBtn');
+            if (installBtn) {
+                installBtn.classList.remove('show');
+            }
+        });
+        
         async function installApp() {
             if (deferredPrompt) {
                 deferredPrompt.prompt();
                 const { outcome } = await deferredPrompt.userChoice;
+                console.log('[PWA] User choice:', outcome);
                 if (outcome === 'accepted') {
-                    document.getElementById('installBanner').classList.remove('show');
+                    const installBtn = document.getElementById('installBtn');
+                    if (installBtn) {
+                        installBtn.classList.remove('show');
+                    }
                 }
                 deferredPrompt = null;
+            } else {
+                alert('La app ya está instalada o el navegador no soporta instalación');
             }
         }
         
