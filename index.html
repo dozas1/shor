@@ -17,7 +17,7 @@
     
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
     
     <style>
         * {
@@ -492,31 +492,29 @@
         let recognition = null;
         let isTranscribing = false;
         let deferredPrompt = null;
-        let firebaseDB = null;
+        let firestoreDB = null;
         let deviceId = null;
         
         // ============================================
         // Firebase Configuration
         // ============================================
         
-        // TODO: Reemplazar con tu configuración de Firebase
         const firebaseConfig = {
             apiKey: "AIzaSyCVuKY4yYUawd50iUFbTeYFWcZd2Lmvv_Q",
             authDomain: "shor-pwa.firebaseapp.com",
-            databaseURL: "https://shor-pwa-default-rtdb.firebaseio.com",
             projectId: "shor-pwa",
             storageBucket: "shor-pwa.firebasestorage.app",
             messagingSenderId: "113185407112",
-            appId: "1:113185407112:web:0fa1b3c5c2f21059c2df3d"
+            appId: "1:113185407112:web:e8f7b0a5d4c3b2a1f6e5d4"
         };
         
-        // Inicializar Firebase
+        // Inicializar Firebase Firestore
         function initFirebase() {
             try {
                 if (firebaseConfig.apiKey !== "TU_API_KEY") {
                     firebase.initializeApp(firebaseConfig);
-                    firebaseDB = firebase.database();
-                    console.log('[Firebase] Inicializado correctamente');
+                    firestoreDB = firebase.firestore();
+                    console.log('[Firestore] Inicializado correctamente');
                     
                     // Generar o recuperar device ID
                     deviceId = localStorage.getItem('deviceId');
@@ -524,72 +522,50 @@
                         deviceId = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
                         localStorage.setItem('deviceId', deviceId);
                     }
-                    console.log('[Firebase] Device ID:', deviceId);
+                    console.log('[Firestore] Device ID:', deviceId);
                     
                     // Sincronizar datos al iniciar
-                    syncFromFirebase();
-                } else {
-                    console.log('[Firebase] No configurado - usando solo IndexedDB local');
+                    syncFromFirestore();
                 }
             } catch (error) {
-                console.error('[Firebase] Error al inicializar:', error);
+                console.error('[Firestore] Error al inicializar:', error);
             }
         }
         
-        // Sincronizar datos a Firebase
-        function syncToFirebase(data) {
-            if (!firebaseDB || !deviceId) return;
+        // Sincronizar datos a Firestore
+        async function syncToFirestore(data) {
+            if (!firestoreDB || !deviceId) return;
             
             try {
-                const ref = firebaseDB.ref('users/' + deviceId);
-                ref.set({
+                await firestoreDB.collection('users').doc(deviceId).set({
                     persona: persona,
                     registros: registros,
-                    lastSync: Date.now()
-                }).then(() => {
-                    console.log('[Firebase] Datos sincronizados');
-                }).catch(error => {
-                    console.error('[Firebase] Error al sincronizar:', error);
-                });
+                    lastSync: new Date().toISOString()
+                }, { merge: true });
+                console.log('[Firestore] Datos sincronizados');
             } catch (error) {
-                console.error('[Firebase] Error en syncToFirebase:', error);
+                console.error('[Firestore] Error al sincronizar:', error);
             }
         }
         
-        // Recuperar datos de Firebase
-        function syncFromFirebase() {
-            if (!firebaseDB || !deviceId) return;
+        // Recuperar datos de Firestore
+        async function syncFromFirestore() {
+            if (!firestoreDB || !deviceId) return;
             
             try {
-                const ref = firebaseDB.ref('users/' + deviceId);
-                ref.once('value').then(snapshot => {
-                    const data = snapshot.val();
-                    if (data) {
-                        console.log('[Firebase] Datos recuperados');
-                        
-                        // Solo sincronizar si hay datos más recientes
-                        if (data.persona && !persona) {
-                            persona = data.persona;
-                            localStorage.setItem('persona', JSON.stringify(persona));
-                        }
-                        
-                        if (data.registros && data.registros.length > registros.length) {
-                            registros = data.registros;
-                            // Actualizar IndexedDB local
-                            data.registros.forEach(reg => {
-                                const transaction = db.transaction(['registros'], 'readwrite');
-                                const store = transaction.objectStore('registros');
-                                store.put(reg);
-                            });
-                        }
-                        
-                        renderRegistros();
+                const doc = await firestoreDB.collection('users').doc(deviceId).get();
+                if (doc.exists) {
+                    const data = doc.data();
+                    console.log('[Firestore] Datos recuperados:', data);
+                    if (data.persona && !persona) {
+                        persona = data.persona;
                     }
-                }).catch(error => {
-                    console.error('[Firebase] Error al recuperar datos:', error);
-                });
+                    if (data.registros && Array.isArray(data.registros)) {
+                        registros = data.registros;
+                    }
+                }
             } catch (error) {
-                console.error('[Firebase] Error en syncFromFirebase:', error);
+                console.error('[Firestore] Error al recuperar datos:', error);
             }
         }
         
@@ -708,6 +684,20 @@
             };
             
             await dbAdd('personas', persona);
+            
+            // Sincronizar persona a Firestore
+            if (firestoreDB && deviceId) {
+                try {
+                    await firestoreDB.collection('users').doc(deviceId).set({
+                        persona: persona,
+                        createdAt: new Date().toISOString()
+                    }, { merge: true });
+                    console.log('[Firestore] Persona guardada');
+                } catch (error) {
+                    console.error('[Firestore] Error al guardar persona:', error);
+                }
+            }
+            
             showApp();
         }
         
@@ -966,14 +956,14 @@
             registros.push(registro);
             renderRegistros();
             
-            // Guardar INMEDIATAMENTE en Firebase (tiempo real)
-            if (firebaseDB && deviceId) {
+            // Guardar INMEDIATAMENTE en Firestore (tiempo real)
+            if (firestoreDB && deviceId) {
                 try {
-                    const registroRef = firebaseDB.ref('registros/' + deviceId + '/' + registro.id);
-                    await registroRef.set(registro);
-                    console.log('[Firebase] Registro guardado en tiempo real:', registro.id);
+                    await firestoreDB.collection('registros').doc(deviceId)
+                        .collection('items').doc(registro.id).set(registro);
+                    console.log('[Firestore] Registro guardado en tiempo real:', registro.id);
                 } catch (error) {
-                    console.error('[Firebase] Error al guardar registro:', error);
+                    console.error('[Firestore] Error al guardar registro:', error);
                 }
             }
             
@@ -1004,8 +994,8 @@
                 return;
             }
             
-            if (!firebaseDB || !deviceId) {
-                alert('Firebase no está configurado. Los datos solo están guardados localmente.');
+            if (!firestoreDB || !deviceId) {
+                alert('Firestore no está configurado. Los datos solo están guardados localmente.');
                 closeExportModal();
                 return;
             }
@@ -1085,18 +1075,17 @@
             };
             await dbAdd('reportes', reporteRecord);
             
-            // Guardar SOLO en Firebase (sin descarga)
+            // Guardar SOLO en Firestore (sin descarga)
             try {
-                const exportRef = firebaseDB.ref('exports/' + deviceId + '/' + reportId);
-                await exportRef.set(exportData);
-                console.log('[Firebase] Reporte guardado en Firebase:', reportId);
+                await firestoreDB.collection('exports').doc(deviceId)
+                    .collection('reports').doc(reportId).set(exportData);
+                console.log('[Firestore] Reporte guardado en Firestore:', reportId);
                 
                 closeExportModal();
-                alert('✓ Reporte guardado en Firebase\n\nID: ' + reportId + '\nRegistros: ' + registrosParaExportar.length);
+                alert('✓ Reporte guardado en Firestore\n\nID: ' + reportId + '\nRegistros: ' + registrosParaExportar.length);
             } catch (error) {
-                console.error('[Firebase] Error al guardar reporte:', error);
+                alert('❌ Error al guardar en Firestore: ' + error.message);
                 closeExportModal();
-                alert('❌ Error al guardar en Firebase: ' + error.message);
             }
         }
         

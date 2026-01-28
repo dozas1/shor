@@ -2,35 +2,35 @@
   "name": "SHOR - Sensor Humano de Operación Real",
   "short_name": "SHOR",
   "description": "Bitácora de operaciones diarias",
-  "start_url": "/",
+  "start_url": "/shor/",
   "display": "standalone",
   "background_color": "#2D3748",
   "theme_color": "#2D3748",
   "orientation": "portrait",
-  "scope": "/",
+  "scope": "/shor/",
   "categories": ["productivity", "business"],
   "prefer_related_applications": false,
   "icons": [
     {
-      "src": "icon-192.png",
+      "src": "/shor/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icon-192.png",
+      "src": "/shor/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "icon-512.png",
+      "src": "/shor/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icon-512.png",
+      "src": "/shor/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

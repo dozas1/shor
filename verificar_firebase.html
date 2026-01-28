@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verificar Firebase - SHOR</title>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #00ff00;
+        }
+        .section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #00ff00;
+            border-radius: 5px;
+        }
+        h2 {
+            color: #00ffff;
+        }
+        pre {
+            background: #000;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        button {
+            background: #00ff00;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 5px;
+        }
+        button:hover {
+            background: #00ffff;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 Verificador de Firebase - SHOR</h1>
+    
+    <div class="section">
+        <h2>📊 Controles</h2>
+        <button onclick="verificarTodo()">Verificar Todo</button>
+        <button onclick="buscarAlfredo()">Buscar Usuario Alfredo</button>
+        <button onclick="listarRegistros()">Listar Registros</button>
+        <button onclick="listarExports()">Listar Exports</button>
+    </div>
+
+    <div class="section">
+        <h2>📝 Resultados</h2>
+        <pre id="output">Esperando verificación...</pre>
+    </div>
+
+    <script>
+        // Configuración Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyCVuKY4yYUawd50iUFbTeYFWcZd2Lmvv_Q",
+            authDomain: "shor-pwa.firebaseapp.com",
+            databaseURL: "https://shor-pwa-default-rtdb.firebaseio.com",
+            projectId: "shor-pwa",
+            storageBucket: "shor-pwa.firebasestorage.app",
+            messagingSenderId: "113185407112",
+            appId: "1:113185407112:web:e8f7b0a5d4c3b2a1f6e5d4"
+        };
+
+        // Inicializar Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        const output = document.getElementById('output');
+
+        function log(message) {
+            output.textContent += message + '\n';
+            console.log(message);
+        }
+
+        function clearOutput() {
+            output.textContent = '';
+        }
+
+        async function verificarTodo() {
+            clearOutput();
+            log('=== VERIFICACIÓN COMPLETA DE FIREBASE ===\n');
+            
+            await buscarAlfredo();
+            await listarRegistros();
+            await listarExports();
+        }
+
+        async function buscarAlfredo() {
+            clearOutput();
+            log('=== BUSCANDO USUARIO ALFREDO ===\n');
+            
+            try {
+                // Buscar en /users/
+                const usersRef = db.ref('users');
+                const snapshot = await usersRef.once('value');
+                const users = snapshot.val();
+                
+                if (!users) {
+                    log('❌ No hay usuarios en Firebase');
+                    return;
+                }
+                
+                log(`✅ Total de dispositivos: ${Object.keys(users).length}\n`);
+                
+                let encontrado = false;
+                for (const [deviceId, userData] of Object.entries(users)) {
+                    if (userData.persona && userData.persona.nombre === 'Alfredo') {
+                        encontrado = true;
+                        log(`✅ ENCONTRADO - Usuario Alfredo`);
+                        log(`   Device ID: ${deviceId}`);
+                        log(`   Persona ID: ${userData.persona.id}`);
+                        log(`   Rol: ${userData.persona.rol}`);
+                        log(`   Registros: ${userData.registros ? userData.registros.length : 0}`);
+                        log(`\n📄 Datos completos:`);
+                        log(JSON.stringify(userData, null, 2));
+                    }
+                }
+                
+                if (!encontrado) {
+                    log('❌ No se encontró usuario con nombre "Alfredo"');
+                    log('\n📋 Usuarios disponibles:');
+                    for (const [deviceId, userData] of Object.entries(users)) {
+                        if (userData.persona) {
+                            log(`   - ${userData.persona.nombre} (${deviceId})`);
+                        }
+                    }
+                }
+                
+            } catch (error) {
+                log(`❌ Error: ${error.message}`);
+            }
+        }
+
+        async function listarRegistros() {
+            clearOutput();
+            log('=== REGISTROS EN FIREBASE ===\n');
+            
+            try {
+                const registrosRef = db.ref('registros');
+                const snapshot = await registrosRef.once('value');
+                const registros = snapshot.val();
+                
+                if (!registros) {
+                    log('❌ No hay registros en Firebase');
+                    return;
+                }
+                
+                log(`✅ Total de dispositivos con registros: ${Object.keys(registros).length}\n`);
+                
+                for (const [deviceId, deviceRegistros] of Object.entries(registros)) {
+                    const count = Object.keys(deviceRegistros).length;
+                    log(`📱 Device: ${deviceId}`);
+                    log(`   Registros: ${count}`);
+                    
+                    // Mostrar primeros 3 registros
+                    const registrosArray = Object.values(deviceRegistros);
+                    registrosArray.slice(0, 3).forEach((reg, i) => {
+                        log(`   ${i + 1}. [${reg.tipo}] ${reg.contenido.substring(0, 50)}...`);
+                        log(`      Fecha: ${reg.fecha} | Persona: ${reg.personaId}`);
+                    });
+                    
+                    if (count > 3) {
+                        log(`   ... y ${count - 3} más\n`);
+                    }
+                }
+                
+            } catch (error) {
+                log(`❌ Error: ${error.message}`);
+            }
+        }
+
+        async function listarExports() {
+            clearOutput();
+            log('=== EXPORTS EN FIREBASE ===\n');
+            
+            try {
+                const exportsRef = db.ref('exports');
+                const snapshot = await exportsRef.once('value');
+                const exports = snapshot.val();
+                
+                if (!exports) {
+                    log('❌ No hay exports en Firebase');
+                    return;
+                }
+                
+                log(`✅ Total de dispositivos con exports: ${Object.keys(exports).length}\n`);
+                
+                for (const [deviceId, deviceExports] of Object.entries(exports)) {
+                    const count = Object.keys(deviceExports).length;
+                    log(`📱 Device: ${deviceId}`);
+                    log(`   Exports: ${count}`);
+                    
+                    // Mostrar últimos exports
+                    const exportsArray = Object.entries(deviceExports);
+                    exportsArray.forEach(([exportId, exportData]) => {
+                        const data = exportData.shor_export;
+                        log(`   📊 ${exportId}`);
+                        log(`      Fecha: ${data.export_date}`);
+                        log(`      Persona: ${data.persona.nombre}`);
+                        log(`      Registros: ${data.registros.length}`);
+                        log(`      Opinión: ${data.opinion_del_dia.substring(0, 50)}...`);
+                    });
+                    log('');
+                }
+                
+            } catch (error) {
+                log(`❌ Error: ${error.message}`);
+            }
+        }
+
+        // Auto-ejecutar al cargar
+        log('✅ Firebase conectado\n');
+        log('Usa los botones arriba para verificar los datos\n');
+    </script>
+</body>
+</html>
