@@ -711,6 +711,11 @@
             
             updateDateDisplay();
             loadRegistrosHoy();
+            
+            // Mostrar resumen completo automáticamente
+            setTimeout(() => {
+                toggleResumenCompleto();
+            }, 500);
         }
         
         function updateDateDisplay() {
@@ -963,9 +968,19 @@
                     await firestoreDB.collection('registros').doc(deviceId)
                         .collection('items').doc(registro.id).set(registro);
                     console.log('[Firestore] Registro guardado en tiempo real:', registro.id);
+                    console.log('[Firestore] Ruta:', 'registros/' + deviceId + '/items/' + registro.id);
                 } catch (error) {
                     console.error('[Firestore] Error al guardar registro:', error);
+                    console.error('[Firestore] Código de error:', error.code);
+                    console.error('[Firestore] Mensaje:', error.message);
+                    
+                    // Mostrar alerta si es error de permisos
+                    if (error.code === 'permission-denied') {
+                        alert('⚠️ Error de Firestore\n\nLas notas se guardan localmente pero NO en Firestore.\n\nConfigura las reglas en:\nconsole.firebase.google.com/project/shor-pwa/firestore');
+                    }
                 }
+            } else {
+                console.warn('[Firestore] No inicializado. Guardado solo local.');
             }
             
             // Vibrate for feedback
