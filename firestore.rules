@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Permitir lectura y escritura a todos los usuarios (modo desarrollo/testing)
+    // IMPORTANTE: Cambiar a reglas más restrictivas en producción
+    match /{document=**} {
+      allow read, write: true;
+    }
+  }
+}
