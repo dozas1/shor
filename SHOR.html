@@ -411,6 +411,11 @@
             </div>
             
             <div class="main-actions">
+                <div id="transcriptionPreview" style="display: none; background: #EDF2F7; padding: 16px; border-radius: 12px; margin-bottom: 16px;">
+                    <div style="font-size: 14px; color: #718096; margin-bottom: 8px;">🎤 Dictando...</div>
+                    <div id="transcriptionText" style="color: #2D3748; font-size: 16px; line-height: 1.5;"></div>
+                </div>
+                
                 <button class="btn btn-primary" id="recordBtn" onclick="toggleVoiceTranscription()">
                     🎤 Dictar nota por voz
                 </button>
@@ -771,17 +776,26 @@
         
         function startVoiceTranscription() {
             if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-                alert('Tu navegador no soporta reconocimiento de voz. Usa Chrome o Edge.');
+                alert('Tu navegador no soporta reconocimiento de voz. Usa Chrome.');
                 return;
             }
             
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             recognition = new SpeechRecognition();
             recognition.lang = 'es-MX';
-            recognition.continuous = true;
+            recognition.continuous = false; // Cambiar a false para Android
             recognition.interimResults = true;
+            recognition.maxAlternatives = 1;
             
             let finalTranscript = '';
+            let restartCount = 0;
+            const maxRestarts = 10;
+            
+            // Mostrar preview
+            const preview = document.getElementById('transcriptionPreview');
+            const previewText = document.getElementById('transcriptionText');
+            preview.style.display = 'block';
+            previewText.textContent = '';
             
             recognition.onstart = () => {
                 isTranscribing = true;
@@ -804,25 +818,71 @@
                     }
                 }
                 
-                console.log('[Voice] Transcribiendo...', finalTranscript + interimTranscript);
+                // Mostrar en tiempo real
+                const fullText = finalTranscript + interimTranscript;
+                previewText.textContent = fullText || 'Escuchando...';
+                console.log('[Voice] Transcribiendo...', fullText);
             };
             
             recognition.onerror = (event) => {
                 console.error('[Voice] Error:', event.error);
+                
                 if (event.error === 'no-speech') {
-                    alert('No se detectó voz. Intenta de nuevo.');
+                    // Reintentar automáticamente si no detecta voz
+                    if (isTranscribing && restartCount < maxRestarts) {
+                        restartCount++;
+                        console.log('[Voice] Reintentando...', restartCount);
+                        setTimeout(() => {
+                            if (isTranscribing) {
+                                try {
+                                    recognition.start();
+                                } catch (e) {
+                                    console.error('[Voice] Error al reintentar:', e);
+                                }
+                            }
+                        }, 100);
+                    } else {
+                        alert('No se detectó voz. Toca el botón de nuevo para continuar.');
+                        stopVoiceTranscription();
+                    }
                 } else if (event.error === 'not-allowed') {
-                    alert('Permisos de micrófono denegados.');
+                    alert('Permisos de micrófono denegados. Permite el acceso al micrófono.');
+                    stopVoiceTranscription();
+                } else if (event.error === 'aborted') {
+                    // Ignorar aborted, es normal al detener
+                    console.log('[Voice] Transcripción detenida');
+                } else {
+                    alert('Error: ' + event.error);
+                    stopVoiceTranscription();
                 }
-                stopVoiceTranscription();
             };
             
-            recognition.onend = async () => {
-                if (finalTranscript.trim()) {
-                    await guardarRegistro('voz', finalTranscript.trim());
-                    console.log('[Voice] Nota guardada:', finalTranscript);
+            recognition.onend = () => {
+                console.log('[Voice] Recognition ended, isTranscribing:', isTranscribing);
+                
+                // Si sigue transcribiendo, reiniciar automáticamente
+                if (isTranscribing && restartCount < maxRestarts) {
+                    restartCount++;
+                    console.log('[Voice] Auto-restart', restartCount);
+                    setTimeout(() => {
+                        if (isTranscribing) {
+                            try {
+                                recognition.start();
+                            } catch (e) {
+                                console.error('[Voice] Error al auto-reiniciar:', e);
+                                stopVoiceTranscription();
+                            }
+                        }
+                    }, 100);
+                } else {
+                    // Guardar si hay texto
+                    if (finalTranscript.trim()) {
+                        guardarRegistro('voz', finalTranscript.trim()).then(() => {
+                            console.log('[Voice] Nota guardada:', finalTranscript);
+                        });
+                    }
+                    stopVoiceTranscription();
                 }
-                stopVoiceTranscription();
             };
             
             try {
@@ -830,18 +890,29 @@
             } catch (err) {
                 console.error('[Voice] Error al iniciar:', err);
                 alert('Error al iniciar reconocimiento de voz');
+                stopVoiceTranscription();
             }
         }
         
         function stopVoiceTranscription() {
+            isTranscribing = false;
+            
             if (recognition) {
-                recognition.stop();
+                try {
+                    recognition.stop();
+                } catch (e) {
+                    console.error('[Voice] Error al detener:', e);
+                }
                 recognition = null;
             }
-            isTranscribing = false;
+            
             const btn = document.getElementById('recordBtn');
             btn.innerHTML = '🎤 Dictar nota por voz';
             btn.classList.remove('btn-recording');
+            
+            // Ocultar preview
+            const preview = document.getElementById('transcriptionPreview');
+            preview.style.display = 'none';
         }
         
         // ============================================
@@ -1052,28 +1123,48 @@
             }
         });
         
-        // Verificar si ya está instalado
-        if (window.matchMedia('(display-mode: standalone)').matches) {
-            const installBtn = document.getElementById('installBtn');
-            if (installBtn) {
-                installBtn.classList.add('hidden');
+        // Verificar si ya está instalado (múltiples métodos para Android)
+        function checkIfInstalled() {
+            const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+            const isIOSStandalone = window.navigator.standalone === true;
+            const isAndroidInstalled = document.referrer.includes('android-app://');
+            
+            if (isStandalone || isIOSStandalone || isAndroidInstalled) {
+                const installBtn = document.getElementById('installBtn');
+                if (installBtn) {
+                    installBtn.classList.add('hidden');
+                }
+                return true;
             }
+            return false;
         }
+        
+        checkIfInstalled();
         
         async function installApp() {
             if (deferredPrompt) {
-                deferredPrompt.prompt();
-                const { outcome } = await deferredPrompt.userChoice;
-                console.log('[PWA] User choice:', outcome);
-                if (outcome === 'accepted') {
-                    const installBtn = document.getElementById('installBtn');
-                    if (installBtn) {
-                        installBtn.classList.add('hidden');
+                try {
+                    deferredPrompt.prompt();
+                    const { outcome } = await deferredPrompt.userChoice;
+                    console.log('[PWA] User choice:', outcome);
+                    if (outcome === 'accepted') {
+                        const installBtn = document.getElementById('installBtn');
+                        if (installBtn) {
+                            installBtn.classList.add('hidden');
+                        }
                     }
+                    deferredPrompt = null;
+                } catch (err) {
+                    console.error('[PWA] Error al instalar:', err);
+                    alert('Error al instalar la app. Intenta desde el menú del navegador (⋮ → Instalar app)');
                 }
-                deferredPrompt = null;
             } else {
-                alert('La app ya está instalada o el navegador no soporta instalación PWA');
+                // Dar instrucciones específicas para Android
+                if (checkIfInstalled()) {
+                    alert('✓ La app ya está instalada');
+                } else {
+                    alert('Para instalar en Android:\n\n1. Toca el menú (⋮) arriba a la derecha\n2. Selecciona "Instalar app" o "Agregar a pantalla de inicio"');
+                }
             }
         }
         
